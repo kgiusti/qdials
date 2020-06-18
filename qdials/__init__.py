@@ -168,6 +168,10 @@ class MgmtClient(object):
             def __iter__(self):
                 return self
 
+            # for 2.x capatibility
+            def next(self):
+                return self.__next__()
+
             def __next__(self):
                 try:
                     v = self._values.pop()

@@ -114,7 +114,7 @@ def _main():
                 subscribers += addr_map['remoteCount']
                 if subscribers == 0:
                     LOG.info("Autolink %s has no subscribers - monitoring it"
-                             " for  deletion", autolink.address)
+                             " for deletion", autolink.address)
                     candidate.add(autolink.identity)
 
             # Compare current candidates with candicates from last pass
