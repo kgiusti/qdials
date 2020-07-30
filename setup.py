@@ -22,7 +22,7 @@
 import os
 from setuptools import setup
 
-_VERSION = "0.0.0"
+_VERSION = "0.1.0"
 
 _dependencies = ["python-qpid-proton"]
 
