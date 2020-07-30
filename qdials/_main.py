@@ -53,6 +53,10 @@ def _main():
                         help='Remote router id [Advanced]')
     parser.add_argument("--edge", type=str, default=None,
                         help='Remote edge router id [Advanced]')
+    parser.add_argument("--remove-outlinks", action='store_true',
+                        help="Delete any corresponding 'out' autoLinks that"
+                        " share the same address as the stale 'in' autoLink.")
+
 
     args = parser.parse_args()
 
@@ -61,13 +65,15 @@ def _main():
     hndlr.setLevel(logging.DEBUG if args.debug else logging.WARNING)
     LOG.addHandler(hndlr)
 
-    eligible = set()
+    eligible = set()   # (record-identity, address)
 
     try:
 
         while True:
 
             time.sleep(args.poll)
+
+            LOG.debug("qdials: begin poll of router %s", args.bus)
 
             try:
                 client = MgmtClient(args.bus, timeout=args.timeout,
@@ -88,17 +94,21 @@ def _main():
                 eligible = set()
                 continue
 
-            # set of autoLinks that are candidates for removal
+            # build a set of autoLinks that are candidates for removal.
+            # Also track out autoLinks for removal if '--remove-outlinks'
+            # enabled
 
-            candidate = set()
+            candidate = set()  # (record-identity, address)
+            out_links = {}     # map of address: record-identity
 
             # walk through the query results and extract the autoLink entries
             # with direction == 'in'
 
             for config in results:
                 autolink = AutoLinkConfig(**config)
-                if autolink.direction != 'in':
-                    continue  # skip outgoing
+                if autolink.direction == 'out':
+                    out_links[autolink.address] = autolink.identity;
+                    continue  # done processing 'out' autoLink
 
                 # Query the autolink's queue address to get the current
                 # number of subscribers
@@ -115,7 +125,7 @@ def _main():
                 if subscribers == 0:
                     LOG.info("Autolink %s has no subscribers - monitoring it"
                              " for deletion", autolink.address)
-                    candidate.add(autolink.identity)
+                    candidate.add((autolink.identity, autolink.address))
 
             # Compare current candidates with candicates from last pass
 
@@ -123,12 +133,20 @@ def _main():
             LOG.info("Found %d autoLinks ready for deletion",
                      len(to_remove))
 
-            for identity in to_remove:
-                LOG.info("Deleting inbound autoLink record id=%s", identity)
+            for identity, address in to_remove:
+                LOG.info("Deleting inbound autoLink address=%s record id=%s",
+                         address, identity)
                 client.delete(type=AutoLinkConfig.TYPE, identity=identity)
+
                 # TODO(kgiusti): generate a signal to an external management
-                # agent to dead letter any outstanding messages and remove the
-                # corresponding 'out' autoLink record
+                # agent to dead letter any outstanding messages
+
+                if args.remove_outlinks:
+                    identity = out_links.get(address)
+                    if identity is not None:
+                        LOG.info("Deleting corresponding out autoLink"
+                                 " address=%s record id=%s", address, identity)
+                        client.delete(type=AutoLinkConfig.TYPE, identity=identity)
 
             client.close()
             eligible = candidate  # save for next poll
